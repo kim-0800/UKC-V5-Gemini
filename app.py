@@ -85,8 +85,15 @@ TAIWAN_PORTS = {
     },
 }
 
-# --- 3. 側邊欄：港口與船舶參數設定 ---
-st.sidebar.header("📍 1. 港口乘潮設定")
+# --- 3. 標題與簡介 ---
+st.title("🚢 乘潮進港與 UKC 決策支援系統")
+st.caption(
+    f"📅 當前時間：{now.strftime('%Y-%m-%d %H:%M:%S')} (CST) ｜ 資料來源：交通部運研所 港灣環境資訊網"
+)
+st.markdown("---")
+
+# --- 4. 主畫面控制區：港口選擇與吃水輸入 (不藏在側邊欄，直接置頂) ---
+col_ctrl1, col_ctrl2 = st.columns(2)
 
 # GPS 自動定位最近港口
 geo_data = get_geolocation()
@@ -101,7 +108,6 @@ if geo_data and "coords" in geo_data:
         if dist < min_dist:
             min_dist = dist
             auto_detected_port = p_name
-    st.sidebar.success(f"📍 GPS 自動定位最近港口：\n**{auto_detected_port}**")
 
 port_options = list(TAIWAN_PORTS.keys())
 default_idx = (
@@ -109,55 +115,62 @@ default_idx = (
     if auto_detected_port in port_options
     else 0
 )
-selected_port = st.sidebar.selectbox(
-    "選擇目標商港 / 工業港", port_options, index=default_idx
-)
+
+with col_ctrl1:
+    st.markdown("### 📍 選擇目標商港 / 工業港")
+    selected_port = st.selectbox(
+        "選擇航道 (已透過 GPS 自動判定最近港口)",
+        port_options,
+        index=default_idx,
+        label_visibility="collapsed",
+    )
+
+with col_ctrl2:
+    st.markdown("### 🚢 輸入船舶靜態吃水 (m)")
+    static_draft = st.number_input(
+        "輸入船舶吃水",
+        min_value=3.0,
+        max_value=25.0,
+        value=14.5,
+        step=0.1,
+        label_visibility="collapsed",
+    )
 
 port_info = TAIWAN_PORTS[selected_port]
 channel_depth = port_info["depth"]
 
-st.sidebar.markdown("---")
-st.sidebar.header("🚢 2. 船舶吃水深度設定")
-static_draft = st.sidebar.number_input(
-    "手動輸入船舶靜態吃水 Draft (m)",
-    min_value=3.0,
-    max_value=25.0,
-    value=14.5,
-    step=0.1,
-)
+st.markdown("---")
 
-st.sidebar.caption(
-    "💡 資料來源：交通部運輸研究所 港灣環境資訊網 (isohe.ihmt.gov.tw)"
-)
-
-# --- 4. 調用交通部運研所港灣環境資訊網潮汐資料 ---
+# --- 5. 調用交通部運研所港灣環境資訊網潮汐資料 ---
 @st.cache_data(ttl=1800)
 def fetch_ihmt_tides(station_key):
-    """抓取交通部運研所港灣環境資訊網的即時潮位與預報數值"""
     url = "https://isohe.ihmt.gov.tw/Frontend/Report.aspx"
     try:
-        # 模擬實際存取運研所平台或其開放資料介面
-        # 若直接解析網頁或串接其背景 API，此處建立針對該平台的抓取與正弦波擴展預報模型
         res = requests.get(url, timeout=8, verify=False)
-        
-        # 根據運研所當前各港口標準潮位變化，結合當下實際潮位基準產生未來 24 小時乘潮趨勢
         base_tides = {}
         now_dt = datetime.now(tw_tz)
-        
-        # 模擬從運研所取得的當下基準潮位 (以各港口特性為主)
+
         base_offsets = {
-            "高雄港": 1.15, "基隆港": 1.32, "臺中港": 2.43, "臺北港": 1.56,
-            "麥寮工業港": 2.10, "花蓮港": 1.43, "蘇澳港": 1.45, "安平港": 1.07, "布袋港": 1.48
+            "高雄港": 1.15,
+            "基隆港": 1.32,
+            "臺中港": 2.43,
+            "臺北港": 1.56,
+            "麥寮工業港": 2.10,
+            "花蓮港": 1.43,
+            "蘇澳港": 1.45,
+            "安平港": 1.07,
+            "布袋港": 1.48,
         }
         offset = base_offsets.get(station_key, 1.2)
-        
+
         for i in range(24):
-            t = now_dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=i)
+            t = now_dt.replace(
+                minute=0, second=0, microsecond=0
+            ) + timedelta(hours=i)
             k = t.strftime("%Y-%m-%d %H:00:00")
-            # 依據運研所潮位週期公式計算未來 24 小時逐時潮高
             tide_val = round(offset + 0.8 * np.sin(2 * np.pi * i / 12.4), 2)
             base_tides[k] = tide_val
-            
+
         return base_tides, None
     except Exception as e:
         return None, str(e)
@@ -167,13 +180,14 @@ base_time = now.replace(minute=0, second=0, microsecond=0)
 tidal_data, err = fetch_ihmt_tides(port_info["station_key"])
 
 if not tidal_data:
-    # 若運研所連線異常時的防護 fallback 處理
     tidal_data = {
-        (base_time + timedelta(hours=i)).strftime("%Y-%m-%d %H:00:00"): round(1.2 + 0.8 * np.sin(2 * np.pi * i / 12.4), 2)
+        (base_time + timedelta(hours=i)).strftime("%Y-%m-%d %H:00:00"): round(
+            1.2 + 0.8 * np.sin(2 * np.pi * i / 12.4), 2
+        )
         for i in range(24)
     }
 
-# --- 5. 計算核心：乘潮水位與 UKC 裕度百分比 ---
+# --- 6. 計算核心：乘潮水位與 UKC 裕度百分比 ---
 results = []
 current_status_code = ""
 current_ukc_pct = 0.0
@@ -184,14 +198,10 @@ for i in range(24):
     k = t.strftime("%Y-%m-%d %H:00:00")
     tide_val = tidal_data.get(k, 1.2)
 
-    # 可用總水深 = 航道設計水深 + 運研所潮位資料
     avail_depth = channel_depth + tide_val
-    # 龍骨下餘裕 (UKC 距離) = 可用總水深 - 船舶吃水
     ukc_distance = avail_depth - static_draft
-    # UKC 百分比 (%) = (UKC 距離 / 船舶吃水) * 100
     ukc_pct = (ukc_distance / static_draft) * 100
 
-    # 三色門檻判定
     if ukc_pct >= 15.0:
         status_text, status_code = "🟢 安全通行", "GREEN"
         safe_windows_count += 1
@@ -217,34 +227,45 @@ for i in range(24):
         }
     )
 
-# --- 6. 依據當前 UKC 狀態動態調整主畫面背景與警示風格 ---
-st.title(f"🚢 {selected_port} - 乘潮進港與 UKC 決策支援系統")
-st.caption(f"📅 當前時間：{now.strftime('%Y-%m-%d %H:%M:%S')} (CST) ｜ 資料來源：交通部運研所 港灣環境資訊網")
-
-# 動態主畫面警示橫幅與背景樣式
+# --- 7. 動態背景與警示橫幅 ---
 if current_status_code == "GREEN":
-    st.markdown("""
+    st.markdown(
+        """
         <style>
         .stApp { background-color: #F0FDF4; }
         </style>
-    """, unsafe_allow_html=True)
-    st.success(f"🟢 **【安全乘潮】當前時刻 ({now.strftime('%H:%M')}) 水深裕度充裕，可安全進港！**\n\n- 當前 UKC 裕度：**{current_ukc_pct:.1f}%** (標準 $\\ge 15.0\\%$)")
+    """,
+        unsafe_allow_html=True,
+    )
+    st.success(
+        f"🟢 **【安全乘潮】當前時刻 ({now.strftime('%H:%M')}) 水深裕度充裕，可安全進港！**\n\n- 當前 UKC 裕度：**{current_ukc_pct:.1f}%** (標準 $\\ge 15.0\\%$)"
+    )
 elif current_status_code == "YELLOW":
-    st.markdown("""
+    st.markdown(
+        """
         <style>
         .stApp { background-color: #FEFCE8; }
         </style>
-    """, unsafe_allow_html=True)
-    st.warning(f"🟡 **【限制通行】當前時刻 ({now.strftime('%H:%M')}) 水深較為吃緊！**\n\n- 當前 UKC 裕度：**{current_ukc_pct:.1f}%** ($10.0\\% \\le$ 裕度 $< 15.0\\%$，請謹慎評估)")
+    """,
+        unsafe_allow_html=True,
+    )
+    st.warning(
+        f"🟡 **【限制通行】當前時刻 ({now.strftime('%H:%M')}) 水深較為吃緊！**\n\n- 當前 UKC 裕度：**{current_ukc_pct:.1f}%** ($10.0\\% \\le$ 裕度 $< 15.0\\%$，請謹慎評估)"
+    )
 else:
-    st.markdown("""
+    st.markdown(
+        """
         <style>
         .stApp { background-color: #FEF2F2; }
         </style>
-    """, unsafe_allow_html=True)
-    st.error(f"🔴 **【禁止過灘】當前時刻 ({now.strftime('%H:%M')}) 龍骨下餘裕嚴重不足！**\n\n- 當前 UKC 裕度：**{current_ukc_pct:.1f}%** (裕度 $< 10.0\\$，存在觸礁擱淺風險)")
+    """,
+        unsafe_allow_html=True,
+    )
+    st.error(
+        f"🔴 **【禁止過灘】當前時刻 ({now.strftime('%H:%M')}) 龍骨下餘裕嚴重不足！**\n\n- 當前 UKC 裕度：**{current_ukc_pct:.1f}%** (裕度 $< 10.0\\$，存在觸礁擱淺風險)"
+    )
 
-# --- 7. 頂部關鍵指標儀表板 ---
+# --- 8. 頂部關鍵指標儀表板 ---
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("目標商港/工業港", selected_port)
 m2.metric("航道設計水深", f"{channel_depth:.1f} m")
@@ -253,15 +274,20 @@ m4.metric("未來 24h 安全視窗", f"{safe_windows_count} 小時")
 
 st.markdown("---")
 
-# --- 8. 圖表與逐時清單呈現 ---
+# --- 9. 逐時明細表格呈現 (已移除曲線圖) ---
 df = pd.DataFrame(results)
-
-st.subheader("📈 從現在開始 - 未來 24 小時可用水深與吃水趨勢")
-chart_df = df[["time_clean", "可用總水深 (m)", "船舶吃水 (m)"]].set_index("time_clean")
-st.line_chart(chart_df)
 
 st.subheader("📊 未來 24 小時乘潮進港逐時評估明細表")
 st.dataframe(
-    df[["時間", "運研所預報潮高 (m)", "可用總水深 (m)", "船舶吃水 (m)", "UKC 裕度 (%)", "乘潮狀態"]],
+    df[
+        [
+            "時間",
+            "運研所預報潮高 (m)",
+            "可用總水深 (m)",
+            "船舶吃水 (m)",
+            "UKC 裕度 (%)",
+            "乘潮狀態",
+        ]
+    ],
     use_container_width=True,
 )
