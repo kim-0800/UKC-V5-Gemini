@@ -11,72 +11,81 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- 1. 頁面基本配置與樣式 (支援動態背景變色) ---
 st.set_page_config(
-    page_title="乘潮進港與 UKC 決策支援系統 (運研所版)", page_icon="🚢", layout="wide"
+    page_title="乘潮進港與 UKC 決策支援系統 (臺灣港務局航道版)",
+    page_icon="🚢",
+    layout="wide",
 )
 
 # 取得台灣時區時間
 tw_tz = pytz.timezone("Asia/Taipei")
 now = datetime.now(tw_tz)
 
-# --- 2. 臺灣主要商港與工業港資料庫 (對應運研所測站) ---
+# --- 2. 臺灣港務股份有限公司各港口與航道細部水深資料庫 ---
 TAIWAN_PORTS = {
-    "高雄港": {
+    "高雄港第二航道": {
         "depth": 17.0,
         "station_key": "高雄港",
         "lat": 22.56,
         "lon": 120.30,
-        "type": "商港",
+        "type": "商港 (貨櫃主力)",
     },
-    "基隆港": {
+    "高雄港第一航道": {
+        "depth": 15.0,
+        "station_key": "高雄港",
+        "lat": 22.61,
+        "lon": 120.27,
+        "type": "商港 (傳統/客輪)",
+    },
+    "基隆港主航道": {
         "depth": 15.5,
         "station_key": "基隆港",
         "lat": 25.15,
         "lon": 121.75,
         "type": "商港",
     },
-    "臺中港": {
+    "臺中港外航道": {
         "depth": 16.0,
         "station_key": "臺中港",
         "lat": 24.26,
         "lon": 120.51,
         "type": "商港",
     },
-    "臺北港": {
+    "臺北港進港航道": {
         "depth": 16.0,
         "station_key": "臺北港",
         "lat": 25.16,
         "lon": 121.37,
         "type": "商港",
     },
-    "麥寮工業港": {
+    "麥寮工業港航道": {
         "depth": 24.0,
         "station_key": "麥寮",
         "lat": 23.78,
         "lon": 120.14,
         "type": "工業港",
     },
-    "花蓮港": {
+    "花蓮港進港航道": {
         "depth": 14.0,
         "station_key": "花蓮港",
         "lat": 23.98,
         "lon": 121.63,
         "type": "商港",
     },
-    "蘇澳港": {
+    "蘇澳港進港航道": {
         "depth": 15.0,
         "station_key": "蘇澳港",
         "lat": 24.60,
         "lon": 121.87,
         "type": "商港",
     },
-    "安平港": {
+    "安平港進港航道": {
         "depth": 12.0,
         "station_key": "安平港",
         "lat": 22.98,
         "lon": 120.15,
         "type": "商港",
     },
-    "布袋港": {
+    "布袋港進港航道": {
         "depth": 7.5,
         "station_key": "布袋港",
         "lat": 23.37,
@@ -86,18 +95,18 @@ TAIWAN_PORTS = {
 }
 
 # --- 3. 標題與簡介 ---
-st.title("🚢 乘潮進港與 UKC 決策支援系統")
+st.title("🚢 乘潮進港與 UKC 決策支援系統 (航道細分版)")
 st.caption(
-    f"📅 當前時間：{now.strftime('%Y-%m-%d %H:%M:%S')} (CST) ｜ 資料來源：交通部運研所 港灣環境資訊網"
+    f"📅 當前時間：{now.strftime('%Y-%m-%d %H:%M:%S')} (CST) ｜ 資料來源：臺灣港務股份有限公司航道標準 & 交通部運研所"
 )
 st.markdown("---")
 
-# --- 4. 主畫面控制區：港口選擇與吃水輸入 (不藏在側邊欄，直接置頂) ---
+# --- 4. 主畫面控制區：港口/航道選擇與吃水輸入 ---
 col_ctrl1, col_ctrl2 = st.columns(2)
 
 # GPS 自動定位最近港口
 geo_data = get_geolocation()
-auto_detected_port = "高雄港"
+auto_detected_port = "高雄港第二航道"
 
 if geo_data and "coords" in geo_data:
     user_lat = geo_data["coords"]["latitude"]
@@ -117,9 +126,9 @@ default_idx = (
 )
 
 with col_ctrl1:
-    st.markdown("### 📍 選擇目標商港 / 工業港")
+    st.markdown("### 📍 選擇目標港口與航道")
     selected_port = st.selectbox(
-        "選擇航道 (已透過 GPS 自動判定最近港口)",
+        "選擇航道",
         port_options,
         index=default_idx,
         label_visibility="collapsed",
@@ -155,7 +164,7 @@ def fetch_ihmt_tides(station_key):
             "基隆港": 1.32,
             "臺中港": 2.43,
             "臺北港": 1.56,
-            "麥寮工業港": 2.10,
+            "麥寮": 2.10,
             "花蓮港": 1.43,
             "蘇澳港": 1.45,
             "安平港": 1.07,
@@ -267,14 +276,14 @@ else:
 
 # --- 8. 頂部關鍵指標儀表板 ---
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("目標商港/工業港", selected_port)
+m1.metric("目標航道", selected_port)
 m2.metric("航道設計水深", f"{channel_depth:.1f} m")
 m3.metric("目前 UKC 裕度", f"{current_ukc_pct:.1f}%")
 m4.metric("未來 24h 安全視窗", f"{safe_windows_count} 小時")
 
 st.markdown("---")
 
-# --- 9. 逐時明細表格呈現 (已移除曲線圖) ---
+# --- 9. 逐時明細表格呈現 ---
 df = pd.DataFrame(results)
 
 st.subheader("📊 未來 24 小時乘潮進港逐時評估明細表")
